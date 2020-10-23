@@ -18,7 +18,7 @@ public class Settings {
     }
 
     public synchronized boolean shouldCheck(String id) {
-        return idsToCheck == null || idsToCheck.isEmpty() || idsToCheck.contains(id);
+        return isEmpty() || idsToCheck.contains(id);
     }
 
     public synchronized void reset() {
@@ -26,6 +26,6 @@ public class Settings {
     }
 
     public boolean isEmpty() {
-        return idsToCheck.isEmpty();
+        return idsToCheck == null || idsToCheck.isEmpty();
     }
 }

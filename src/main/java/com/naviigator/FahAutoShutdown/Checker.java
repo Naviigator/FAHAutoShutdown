@@ -14,6 +14,7 @@ import java.util.stream.Collectors;
 
 public class Checker {
     private final Consumer<Result> resultSetter;
+    private final Runnable shutdownProcedure;
     private final Settings settings;
     private volatile boolean running = true;
 
@@ -22,8 +23,9 @@ public class Checker {
 
     private ObjectMapper mapper = new ObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
-    public Checker(Consumer<Result> resultSetter, Settings settings) {
+    public Checker(Consumer<Result> resultSetter, Runnable shutdownProcedure, Settings settings) {
         this.resultSetter = resultSetter;
+        this.shutdownProcedure = shutdownProcedure;
         this.settings = settings;
         if (cacheKiller < 0) {
             cacheKiller *= -1;
@@ -84,11 +86,12 @@ public class Checker {
 
     private void run(int updateRate) {
         while (running) {
+            FahJobDescriptions descriptions = null;
             try {
                 String json = getWebResult("http://127.0.0.1:7396/api/updates", "GET", "sid=" + sessionId, true);
                 if ("[[\"reset\"]]".equals(json)) {
                     stop();
-                    new Checker(resultSetter, settings);
+                    new Checker(resultSetter, shutdownProcedure, settings);
                     continue;
                 }
                 final String start = "[[\"/api/slots\", [\n";
@@ -100,28 +103,36 @@ public class Checker {
                     throw new IllegalArgumentException("unexpected end");
                 }
                 json = "{\"values\": [" + json.substring(start.length(), json.length() - end.length()) + "]}";
-                FahJobDescriptions descriptions = mapper.readValue(json, FahJobDescriptions.class);
+                descriptions = mapper.readValue(json, FahJobDescriptions.class);
 
                 int runningJobs = 0;
+                boolean cancelProcessing = false;
                 for (FahJobDescription value : descriptions.values) {
                     if (settings.shouldCheck(value.id)) {
                         if (value.status.equals(FahJobDescription.RUNNING)) {
-                            throw new IllegalStateException("still running - please finish!");
-                        }
-                        if (!value.status.equals(FahJobDescription.PAUSED)) {
+                            cancelProcessing = true;
+                            break;
+                        } else if (!value.status.equals(FahJobDescription.PAUSED)) {
                             ++runningJobs;
                         }
                     }
                 }
-                setResult(descriptions.values);
-                if (runningJobs == 0) {
-                    setErrorStatus("Shutting down!");
-                    stop();
-                    Runtime.getRuntime().exec("shutdown -s -t 60");
-                    System.exit(0);
+                if (cancelProcessing) {
+                    setErrorStatusWithResult("still running - please finish!", descriptions.values);
+                } else {
+                    setResult(descriptions.values);
+                    if (runningJobs == 0) {
+                        setErrorStatus("Shutting down!");
+                        stop();
+                        shutdownProcedure.run();
+                    }
                 }
             } catch (Exception e) {
-                setErrorStatus(e.getMessage());
+                if (descriptions != null) {
+                    setErrorStatusWithResult(e.getMessage(), descriptions.values);
+                } else {
+                    setErrorStatus(e.getMessage());
+                }
             }
 
             try {
@@ -134,6 +145,10 @@ public class Checker {
 
     private void setErrorStatus(String status) {
         resultSetter.accept(new Result(status));
+    }
+
+    private void setErrorStatusWithResult(String status, List<FahJobDescription> descriptions) {
+        resultSetter.accept(new Result(status, descriptions));
     }
 
     private void setResult(List<FahJobDescription> descriptions) {
