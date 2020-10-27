@@ -33,7 +33,6 @@ public class Launcher {
 
         final Map<String, JLabel> internalLabels = new HashMap<>();
         new Checker(result -> SwingUtilities.invokeLater(() -> {
-            System.out.println(statusLabel.getSize());
             boolean addNewPanels = false;
 
             for (FahJobDescription value : result.jobDescriptions) {

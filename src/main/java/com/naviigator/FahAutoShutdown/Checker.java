@@ -94,6 +94,9 @@ public class Checker {
                     new Checker(resultSetter, shutdownProcedure, settings);
                     continue;
                 }
+                if("[[\"heartbeat\"]]".equals(json)) {
+                    throw new IllegalArgumentException("Only heartbeat recieved - a correct update should follow shortly");
+                }
                 final String start = "[[\"/api/slots\", [\n";
                 if (!json.startsWith(start)) {
                     throw new IllegalArgumentException("unexpected begin");
